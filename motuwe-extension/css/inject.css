@@ -1,0 +1,53 @@
+/* Injectable CSS for web-accessible resources */
+
+/* This file contains styles that need to be injected into the page context */
+/* Used for table selection overlays and dynamic styling */
+
+.motuwe-overlay-highlight {
+  box-shadow: 0 0 0 3px #4CAF50, 0 0 0 6px rgba(76, 175, 80, 0.3) !important;
+  position: relative !important;
+  z-index: 999997 !important;
+}
+
+.motuwe-overlay-highlight::before {
+  content: attr(data-motuwe-info) !important;
+  position: absolute !important;
+  top: -35px !important;
+  left: 0 !important;
+  background: #4CAF50 !important;
+  color: white !important;
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  white-space: nowrap !important;
+  z-index: 1000000 !important;
+  pointer-events: none !important;
+}
+
+/* Selection guide overlay */
+.motuwe-selection-guide {
+  position: fixed !important;
+  top: 10px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(0, 0, 0, 0.9) !important;
+  color: white !important;
+  padding: 10px 20px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  z-index: 1000001 !important;
+  pointer-events: none !important;
+  transition: all 0.3s ease !important;
+}
+
+.motuwe-selection-guide::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 100% !important;
+  left: 50% !important;
+  margin-left: -5px !important;
+  border: 5px solid transparent !important;
+  border-top-color: rgba(0, 0, 0, 0.9) !important;
+}

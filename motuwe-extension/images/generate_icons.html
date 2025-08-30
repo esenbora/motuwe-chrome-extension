@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Icon Generator</title>
+</head>
+<body>
+    <h2>Motuwe Icon Generator</h2>
+    <p>Right-click each icon and save as the specified filename:</p>
+    
+    <div>
+        <h3>icon16.png (16x16)</h3>
+        <canvas id="icon16" width="16" height="16"></canvas>
+    </div>
+    
+    <div>
+        <h3>icon32.png (32x32)</h3>
+        <canvas id="icon32" width="32" height="32"></canvas>
+    </div>
+    
+    <div>
+        <h3>icon48.png (48x48)</h3>
+        <canvas id="icon48" width="48" height="48"></canvas>
+    </div>
+    
+    <div>
+        <h3>icon128.png (128x128)</h3>
+        <canvas id="icon128" width="128" height="128"></canvas>
+    </div>
+
+    <script>
+        function drawIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Background
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Table lines (scaled)
+            ctx.fillStyle = 'white';
+            const scale = size / 128;
+            
+            // Header row
+            ctx.fillRect(20 * scale, 30 * scale, 88 * scale, 8 * scale);
+            
+            // Table cells - simplified for small sizes
+            if (size >= 32) {
+                // Row 1
+                ctx.fillRect(20 * scale, 45 * scale, 26 * scale, 8 * scale);
+                ctx.fillRect(51 * scale, 45 * scale, 26 * scale, 8 * scale);
+                ctx.fillRect(82 * scale, 45 * scale, 26 * scale, 8 * scale);
+                
+                // Row 2
+                ctx.fillRect(20 * scale, 60 * scale, 26 * scale, 8 * scale);
+                ctx.fillRect(51 * scale, 60 * scale, 26 * scale, 8 * scale);
+                ctx.fillRect(82 * scale, 60 * scale, 26 * scale, 8 * scale);
+                
+                if (size >= 48) {
+                    // Row 3
+                    ctx.fillRect(20 * scale, 75 * scale, 26 * scale, 8 * scale);
+                    ctx.fillRect(51 * scale, 75 * scale, 26 * scale, 8 * scale);
+                    ctx.fillRect(82 * scale, 75 * scale, 26 * scale, 8 * scale);
+                }
+                
+                if (size >= 128) {
+                    // Row 4
+                    ctx.fillRect(20 * scale, 90 * scale, 26 * scale, 8 * scale);
+                    ctx.fillRect(51 * scale, 90 * scale, 26 * scale, 8 * scale);
+                    ctx.fillRect(82 * scale, 90 * scale, 26 * scale, 8 * scale);
+                }
+            } else {
+                // Simplified for 16x16
+                ctx.fillRect(3, 8, 10, 2);
+                ctx.fillRect(3, 11, 3, 2);
+                ctx.fillRect(7, 11, 3, 2);
+                ctx.fillRect(11, 11, 2, 2);
+            }
+        }
+        
+        // Generate all icons
+        drawIcon('icon16', 16);
+        drawIcon('icon32', 32);
+        drawIcon('icon48', 48);
+        drawIcon('icon128', 128);
+        
+        // Auto-download function
+        function downloadCanvas(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        }
+        
+        // Add download buttons
+        setTimeout(() => {
+            const container = document.createElement('div');
+            container.innerHTML = '<br><button onclick="downloadAll()">Download All Icons</button>';
+            document.body.appendChild(container);
+            
+            window.downloadAll = function() {
+                downloadCanvas('icon16', 'icon16.png');
+                setTimeout(() => downloadCanvas('icon32', 'icon32.png'), 100);
+                setTimeout(() => downloadCanvas('icon48', 'icon48.png'), 200);
+                setTimeout(() => downloadCanvas('icon128', 'icon128.png'), 300);
+            };
+        }, 100);
+    </script>
+</body>
+</html>

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 380px;
+            min-height: 500px;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .header {
+            background: #2d2d2d;
+            padding: 15px;
+            border-bottom: 1px solid #404040;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 18px;
+            color: #4CAF50;
+        }
+
+        .header .subtitle {
+            margin: 5px 0 0 0;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .controls {
+            padding: 15px;
+            border-bottom: 1px solid #404040;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            flex: 1;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #555;
+        }
+
+        button.secondary:hover {
+            background: #666;
+        }
+
+        .options {
+            margin-top: 10px;
+            display: none;
+        }
+
+        .options.show {
+            display: block;
+        }
+
+        .selector-panel {
+            margin-top: 10px;
+            padding: 10px;
+            background: #2d2d2d;
+            border-radius: 4px;
+            border: 1px solid #404040;
+        }
+
+        .selector-input {
+            margin-bottom: 10px;
+        }
+
+        .selector-input textarea {
+            width: 100%;
+            height: 60px;
+            background: #1e1e1e;
+            color: #fff;
+            border: 1px solid #404040;
+            border-radius: 3px;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 11px;
+            resize: vertical;
+            margin-bottom: 8px;
+        }
+
+        .selector-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn.small {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+
+        .saved-selectors {
+            margin-bottom: 10px;
+        }
+
+        .saved-selectors label {
+            display: block;
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .saved-selectors select {
+            width: 100%;
+            background: #1e1e1e;
+            color: #fff;
+            border: 1px solid #404040;
+            border-radius: 3px;
+            padding: 6px;
+            font-size: 11px;
+        }
+
+        .validation-result {
+            font-size: 11px;
+            padding: 6px;
+            border-radius: 3px;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .validation-result.success {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+
+        .validation-result.error {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            border: 1px solid #f44336;
+        }
+
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #1e1e1e;
+            border-radius: 6px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80%;
+            overflow-y: auto;
+            border: 1px solid #404040;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #404040;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #4CAF50;
+            font-size: 16px;
+        }
+
+        .close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .close:hover {
+            color: #fff;
+        }
+
+        .modal-body {
+            padding: 15px;
+        }
+
+        .modal-body label {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .preset-section,
+        .transformation-pipeline {
+            margin-bottom: 20px;
+        }
+
+        .preset-section {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .preset-section select {
+            flex: 1;
+            background: #2d2d2d;
+            color: #fff;
+            border: 1px solid #404040;
+            border-radius: 3px;
+            padding: 6px;
+            font-size: 11px;
+        }
+
+        .transformation-item {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .transformation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .transformation-type {
+            font-weight: 600;
+            color: #4CAF50;
+            font-size: 12px;
+        }
+
+        .transformation-remove {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .transformation-options {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .option-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            font-size: 11px;
+        }
+
+        .option-row input,
+        .option-row select {
+            background: #1e1e1e;
+            color: #fff;
+            border: 1px solid #404040;
+            border-radius: 3px;
+            padding: 4px;
+            font-size: 10px;
+        }
+
+        .preview-table {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 200px;
+            overflow: auto;
+            font-family: monospace;
+            font-size: 10px;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 15px;
+            border-top: 1px solid #404040;
+        }
+
+        .option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .option input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .option input[type="range"] {
+            margin-left: 8px;
+            flex: 1;
+        }
+
+        .tables-container {
+            max-height: 300px;
+            overflow-y: auto;
+            border-bottom: 1px solid #404040;
+        }
+
+        .table-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .table-item:hover {
+            background: #2d2d2d;
+            border-left-color: #4CAF50;
+        }
+
+        .table-item.selected {
+            background: #2d2d2d;
+            border-left-color: #4CAF50;
+            box-shadow: inset 3px 0 0 #4CAF50;
+        }
+        
+        .table-item.selected .table-title {
+            color: #4CAF50;
+        }
+
+        .table-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .table-info {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 6px;
+        }
+
+        .table-preview {
+            font-family: monospace;
+            font-size: 10px;
+            background: #1e1e1e;
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 120px;
+            overflow: auto;
+            border: 1px solid #333;
+            margin-top: 8px;
+        }
+        
+        .table-preview table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9px;
+        }
+        
+        .table-preview th,
+        .table-preview td {
+            border: 1px solid #404040;
+            padding: 4px 6px;
+            text-align: left;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .table-preview th {
+            background: #2d2d2d;
+            color: #4CAF50;
+            font-weight: bold;
+            font-size: 8px;
+        }
+        
+        .table-preview td {
+            color: #ddd;
+            font-size: 8px;
+        }
+        
+        .table-preview .row-count {
+            font-size: 7px;
+            color: #888;
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        .export-section {
+            padding: 15px;
+            display: none;
+        }
+
+        .export-section.show {
+            display: block;
+        }
+
+        .export-options {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .export-format {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .export-format input[type="radio"] {
+            margin-right: 8px;
+        }
+
+        .status {
+            padding: 10px 15px;
+            background: #2d2d2d;
+            border-top: 1px solid #404040;
+            font-size: 11px;
+            color: #888;
+            min-height: 20px;
+        }
+
+        .status.success {
+            color: #4CAF50;
+        }
+
+        .status.error {
+            color: #f44336;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #666;
+            border-radius: 50%;
+            border-top-color: #4CAF50;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .no-tables {
+            padding: 40px 15px;
+            text-align: center;
+            color: #888;
+            font-size: 13px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4CAF50;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Motuwe</h1>
+        <div class="subtitle" id="pageInfo">Table Scraper Extension</div>
+    </div>
+
+    <div class="controls">
+        <div class="btn-group">
+            <button id="scanBtn">Scan Tables</button>
+            <button id="selectBtn" class="secondary">Visual Select</button>
+            <button id="selectorBtn" class="secondary">Custom Selector</button>
+            <button id="optionsBtn" class="secondary">⚙️</button>
+        </div>
+        
+        <div class="options" id="scanOptions">
+            <div class="option">
+                <input type="checkbox" id="waitDynamic" checked>
+                <label for="waitDynamic">Wait for dynamic content</label>
+            </div>
+            <div class="option">
+                <input type="checkbox" id="includeHidden">
+                <label for="includeHidden">Include hidden tables</label>
+            </div>
+            <div class="option">
+                <input type="checkbox" id="includeIframes">
+                <label for="includeIframes">Include iframe tables</label>
+            </div>
+            <div class="option">
+                <label>Timeout: <span id="timeoutValue">5</span>s</label>
+                <input type="range" id="timeoutRange" min="1" max="15" value="5">
+            </div>
+        </div>
+
+        <div class="selector-panel" id="selectorPanel" style="display: none;">
+            <div class="selector-input">
+                <textarea id="customSelector" placeholder="Enter CSS selector or XPath expression...
+Examples:
+CSS: table.data-table, .grid table
+XPath: //table[@class='data'], //table[count(.//tr) > 5]"></textarea>
+                <div class="selector-actions">
+                    <button id="validateBtn" class="secondary small">Validate</button>
+                    <button id="saveBtn" class="secondary small">Save</button>
+                    <button id="applySelectorBtn" class="small">Apply</button>
+                </div>
+            </div>
+            
+            <div class="saved-selectors">
+                <label>Quick Selectors:</label>
+                <select id="savedSelectors">
+                    <option value="">Select a saved selector...</option>
+                </select>
+            </div>
+
+            <div class="validation-result" id="validationResult"></div>
+        </div>
+    </div>
+
+    <div class="tables-container" id="tablesContainer">
+        <div class="no-tables" id="noTables">
+            Click "Scan Tables" to find tables on this page
+        </div>
+    </div>
+
+    <div class="export-section" id="exportSection">
+        <div class="export-options">
+            <button id="exportBtn">Export Selected</button>
+            <button id="previewBtn" class="secondary">Preview Data</button>
+            <button id="transformBtn" class="secondary">Transform Data</button>
+        </div>
+        
+        <div class="export-format">
+            <input type="radio" name="format" value="csv" id="formatCsv" checked>
+            <label for="formatCsv">CSV</label>
+        </div>
+        <div class="export-format">
+            <input type="radio" name="format" value="json" id="formatJson">
+            <label for="formatJson">JSON</label>
+        </div>
+        <div class="export-format">
+            <input type="radio" name="format" value="xlsx" id="formatXlsx">
+            <label for="formatXlsx">Excel</label>
+        </div>
+    </div>
+
+    <div class="status" id="status">Ready</div>
+
+    <!-- Data Transformation Modal -->
+    <div class="modal" id="transformModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Data Transformation</h3>
+                <button class="close" id="closeModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="preset-section">
+                    <label>Quick Presets:</label>
+                    <select id="transformPresets">
+                        <option value="">Select a preset...</option>
+                    </select>
+                    <button id="applyPresetBtn" class="secondary small">Apply</button>
+                </div>
+
+                <div class="transformation-pipeline">
+                    <label>Custom Transformations:</label>
+                    <div id="transformationsList"></div>
+                    <button id="addTransformBtn" class="secondary small">Add Transformation</button>
+                </div>
+
+                <div class="preview-section" id="transformPreview" style="display: none;">
+                    <label>Preview (first 5 rows):</label>
+                    <div class="preview-table" id="previewTable"></div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="previewTransformBtn" class="secondary">Preview</button>
+                <button id="applyTransformBtn">Apply & Use</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/popup.js"></script>
+</body>
+</html>

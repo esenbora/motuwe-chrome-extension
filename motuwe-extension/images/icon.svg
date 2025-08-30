@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" fill="#4CAF50" rx="16"/>
+  <g fill="white">
+    <!-- Table icon -->
+    <rect x="20" y="30" width="88" height="8" rx="2"/>
+    <rect x="20" y="45" width="26" height="8" rx="2"/>
+    <rect x="51" y="45" width="26" height="8" rx="2"/>
+    <rect x="82" y="45" width="26" height="8" rx="2"/>
+    <rect x="20" y="60" width="26" height="8" rx="2"/>
+    <rect x="51" y="60" width="26" height="8" rx="2"/>
+    <rect x="82" y="60" width="26" height="8" rx="2"/>
+    <rect x="20" y="75" width="26" height="8" rx="2"/>
+    <rect x="51" y="75" width="26" height="8" rx="2"/>
+    <rect x="82" y="75" width="26" height="8" rx="2"/>
+    <rect x="20" y="90" width="26" height="8" rx="2"/>
+    <rect x="51" y="90" width="26" height="8" rx="2"/>
+    <rect x="82" y="90" width="26" height="8" rx="2"/>
+  </g>
+</svg>
