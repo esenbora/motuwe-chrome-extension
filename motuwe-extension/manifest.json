@@ -1,50 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Motuwe - Table Scraper",
-  "version": "2.0.0",
-  "description": "Modern table scraper with dynamic content support",
-  "permissions": [
-    "activeTab",
-    "storage",
-    "downloads",
-    "scripting",
-    "cookies",
-    "identity"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "background": {
-    "service_worker": "js/background.js"
-  },
+  "name": "Motuwe Scraper",
+  "version": "1.0.0",
+  "description": "Configurable, reliable web scraper with preview and backend upload.",
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "images/icon16.png",
-      "32": "images/icon32.png",
-      "48": "images/icon48.png",
-      "128": "images/icon128.png"
-    }
+    "default_title": "Motuwe Scraper",
+    "default_popup": "popup.html"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["js/selector-engine.js", "js/excel-export.js", "js/data-transformer.js", "js/iframe-scraper.js", "js/auth-manager.js", "js/websocket-manager.js", "js/storage-manager.js", "js/worker-manager.js", "js/template-manager.js", "js/history-manager.js", "js/content.js"],
-      "css": ["css/content.css"],
-      "run_at": "document_idle"
-    }
-  ],
-  "options_page": "options.html",
-  "icons": {
-    "16": "images/icon16.png",
-    "32": "images/icon32.png",
-    "48": "images/icon48.png",
-    "128": "images/icon128.png"
+  "permissions": ["activeTab", "scripting", "storage", "webNavigation"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["css/inject.css"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "options_page": "options.html"
 }
