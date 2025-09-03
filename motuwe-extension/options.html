@@ -25,10 +25,23 @@
     <textarea id="selectors"></textarea>
     <div class="muted">Saved as default for new sessions.</div>
 
+    <div class="row">
+      <label><input type="checkbox" id="defIncludeOpenGraph"> Default: Include OpenGraph</label>
+      <label><input type="checkbox" id="defIncludeJsonLd"> Default: Include JSON-LD</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="defDeepScan"> Default: Deep scan</label>
+      <label><input type="checkbox" id="defCollectLinks"> Default: Collect links</label>
+    </div>
+
+    <h3>Presets</h3>
+    <div class="muted">Quickly apply presets for common sites.</div>
+    <button id="presetTransfermarkt">Apply Transfermarkt Preset</button>
+    <button id="presetFbref">Apply FBref Preset</button>
+
     <button id="save">Save</button>
     <div id="status" class="muted"></div>
 
     <script src="options.js"></script>
   </body>
   </html>
-

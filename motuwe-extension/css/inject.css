@@ -4,9 +4,10 @@
 /* Used for table selection overlays and dynamic styling */
 
 .motuwe-overlay-highlight {
-  box-shadow: 0 0 0 3px #4CAF50, 0 0 0 6px rgba(76, 175, 80, 0.3) !important;
+  box-shadow: 0 0 0 3px #00e676, 0 0 0 8px rgba(0, 230, 118, 0.25) !important;
   position: relative !important;
   z-index: 999997 !important;
+  transition: box-shadow 120ms ease-in-out !important;
 }
 
 .motuwe-overlay-highlight::before {

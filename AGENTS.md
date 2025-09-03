@@ -1,33 +1,37 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Source lives in `src/`, grouped by feature. Shared helpers go in `src/lib` (or `src/common`) to avoid circular deps.
-- Tests live in `tests/` mirroring `src/` (e.g., `src/auth/` → `tests/auth/`).
-- Static assets: `assets/` or `public/`. Developer utilities: `scripts/`.
-- Configuration stays at the repo root (e.g., `.editorconfig`, linters, `.env.example`).
+- Electron app at repo root: `main.js`, `index.html`, `package.json`.
+- Chrome extension in `motuwe-extension/`: `manifest.json`, `background.js`, `content.js`, `popup.{html,js}`, `css/`, `images/`, and focused modules under `motuwe-extension/js/` (e.g., `storage-manager.js`).
+- Developer utilities in `scripts/`. Config/docs (e.g., `.gitignore`, `LICENSE`, `README.md`) at root.
+- Add tests under `tests/`, mirroring source layout (e.g., `tests/motuwe-extension/js/storage-manager.test.js`).
 
 ## Build, Test, and Development Commands
-- Install: use the project toolchain. Examples: `npm ci`, `pnpm i`, or `pip install -r requirements.txt`.
-- Develop: run the local entrypoint. Examples: `npm run dev` or `python -m app`.
-- Build: produce a production artifact. Examples: `npm run build` or `make build`.
-- Test: run the full suite. Examples: `npm test`, `pytest -q`, or `pytest --cov` for coverage.
-Tip: prefer commands defined in `package.json`, `Makefile`, or `pyproject.toml` if present.
+- Install: `npm install` (Node 16+).
+- Develop (Electron): `npm start` — launches the desktop app.
+- Package (Electron): `npm run dist` (installers via electron-builder), `npm run pack` (unpacked dirs), `npm run build` (alias).
+- Develop (Extension): Chrome → `chrome://extensions` → Enable Developer Mode → Load unpacked → select `motuwe-extension/`.
+- Tests: once configured, `npm test` for unit tests; add Playwright/Spectron scripts for E2E.
 
 ## Coding Style & Naming Conventions
-- Indentation: follow `.editorconfig`; otherwise 2 spaces for JS/TS, 4 spaces for Python.
-- Naming: files/folders kebab-case (JS/TS) or snake_case (Python); classes in PascalCase; functions/vars in camelCase (JS/TS) or snake_case (Python).
-- Formatting/Linting: use configured tools, e.g., `npm run lint`, `npm run format`, `ruff check .`, `black .`.
+- Indentation: 2 spaces (JavaScript).
+- Naming: files/folders `kebab-case`; classes `PascalCase`; functions/variables `camelCase`.
+- Structure: Electron code stays at root; extension logic in `motuwe-extension/js/` as small, single-purpose modules.
+- Formatting/Linting: prefer ESLint + Prettier if adding; match existing style. Example file: `motuwe-extension/js/page-scraper.js`.
 
 ## Testing Guidelines
-- Frameworks: Jest/Vitest for JS/TS; Pytest for Python.
-- Structure: mirror `src/`; name tests `*.test.ts`/`*.spec.ts` or `test_*.py`.
-- Coverage: target ≥ 80% on changed lines. Run locally with `npm test -- --coverage` or `pytest --cov`.
+- Frameworks: Jest for pure JS utilities; Playwright or Spectron for Electron E2E.
+- Conventions: name tests `*.test.js`; mirror source tree under `tests/`.
+- Coverage: target ≥80% on changed lines. Mock browser/Electron APIs where feasible.
+- Run: `npm test` (add Jest config and script when introducing tests).
 
 ## Commit & Pull Request Guidelines
-- Commits: follow Conventional Commits (e.g., `feat(auth): add token refresh on 401`).
-- PRs: include a clear description, link issues (e.g., `Closes #123`), and screenshots for UI changes. Keep PRs small and focused; add migration/rollback notes when relevant.
+- Commits: use Conventional Commits. Examples:
+  - `feat(extension): add iframe scraping`
+  - `fix(app): handle CSV escaping`
+- PRs: include a clear summary, linked issues (e.g., `Closes #123`), and screenshots/GIFs for UI changes (Electron window, extension popup/options). Note any permission changes in `manifest.json` and migration steps.
 
 ## Security & Configuration Tips
-- Never commit secrets. Use `.env` (git-ignored) and keep `.env.example` sanitized and current.
-- Validate inputs at boundaries (HTTP, CLI, DB); log without leaking sensitive data.
-
+- Never commit secrets or API keys.
+- Request minimal extension permissions; sanitize and validate scraped content.
+- Avoid logging sensitive data; follow least-privilege for Electron and extension APIs.

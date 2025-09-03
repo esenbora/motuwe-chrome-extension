@@ -4,13 +4,15 @@
   "version": "1.0.0",
   "description": "Configurable, reliable web scraper with preview and backend upload.",
   "action": {
-    "default_title": "Motuwe Scraper",
-    "default_popup": "popup.html"
+    "default_title": "Motuwe Scraper"
   },
-  "permissions": ["activeTab", "scripting", "storage", "webNavigation"],
+  "permissions": ["activeTab", "scripting", "storage", "webNavigation", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "side_panel": {
+    "default_path": "popup.html"
+  }
 }

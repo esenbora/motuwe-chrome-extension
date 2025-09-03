@@ -4,28 +4,35 @@ let LAST_RESULT = null;
 function $(id) { return document.getElementById(id); }
 
 function readConfigFromUI({ mode = 'advanced' } = {}) {
+  const get = (id) => document.getElementById(id);
   let selectors = [];
-  try { selectors = JSON.parse($("selectors").value || '[]'); } catch { selectors = []; }
-  const linkPatterns = ($("linkPatterns").value || '').split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const txt = get('selectors')?.value;
+    selectors = JSON.parse(txt || '[]');
+  } catch { selectors = []; }
+  const patternsTxt = get('linkPatterns')?.value || '';
+  const linkPatterns = patternsTxt.split(',').map(s => s.trim()).filter(Boolean);
   return {
     mode,
     selectors,
-    includeOpenGraph: $("includeOpenGraph").checked,
-    includeJsonLd: $("includeJsonLd").checked,
-    linkSelector: $("linkSelector").value || undefined,
+    includeOpenGraph: !!get('includeOpenGraph')?.checked,
+    includeJsonLd: !!get('includeJsonLd')?.checked,
+    linkSelector: get('linkSelector')?.value || undefined,
     linkPatterns: linkPatterns.length ? linkPatterns : undefined,
-    deepScan: $("deepScan").checked,
-    collectLinks: $("collectLinks").checked,
+    deepScan: !!get('deepScan')?.checked,
+    collectLinks: !!get('collectLinks')?.checked,
   };
 }
 
 function writeConfigToUI(cfg) {
   if (!cfg) return;
-  $("selectors").value = JSON.stringify(cfg.selectors || [], null, 2);
-  $("includeOpenGraph").checked = !!cfg.includeOpenGraph;
-  $("includeJsonLd").checked = !!cfg.includeJsonLd;
-  $("linkSelector").value = cfg.linkSelector || '';
-  $("linkPatterns").value = (cfg.linkPatterns || []).join(',');
+  // Advanced controls removed; keep function tolerant to missing elements
+  const set = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
+  set('selectors', 'value', JSON.stringify(cfg.selectors || [], null, 2));
+  const og = document.getElementById('includeOpenGraph'); if (og) og.checked = !!cfg.includeOpenGraph;
+  const jl = document.getElementById('includeJsonLd'); if (jl) jl.checked = !!cfg.includeJsonLd;
+  set('linkSelector', 'value', cfg.linkSelector || '');
+  set('linkPatterns', 'value', (cfg.linkPatterns || []).join(','));
 }
 
 async function saveConfig() {
@@ -49,7 +56,9 @@ async function loadBackend() {
 }
 
 function setOutput(obj) {
-  $("output").textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+  const out = $("output");
+  if (!out) return; // raw JSON hidden in simplified UI
+  out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
 }
 
 function setLoading(on, msg = 'Working...') {
@@ -57,7 +66,7 @@ function setLoading(on, msg = 'Working...') {
   const lm = $("loadingMsg");
   if (lm) lm.textContent = msg;
   ov.style.display = on ? 'flex' : 'none';
-  ["scrape","copy","download","save","preview","send","openOptions"].forEach(id => {
+  ["scrape","download","save","preview","send","openOptions","selectTable"].forEach(id => {
     const el = $(id); if (el) el.disabled = on;
   });
 }
@@ -114,11 +123,16 @@ function renderTables(tables = []) {
     hostEl.innerHTML = '<div class="muted">No tables detected on this page.</div>';
     return;
   }
-  tables.slice(0, 50).forEach((t, idx) => {
+  const sorted = [...tables].sort((a,b) => (b.score||0) - (a.score||0));
+  sorted.slice(0, 50).forEach((t, idx) => {
     const card = document.createElement('div');
     card.style.marginBottom = '10px';
     const title = document.createElement('div');
-    title.innerHTML = `<div class="row"><div><strong>#${idx+1}</strong> <span class="muted">${t.type || 'table'}</span> <span class="muted">${(t.selector || '').slice(0,80)}</span></div><div style=\"text-align:right\"><button data-idx=\"${idx}\" class=\"copy-json\">Copy JSON</button> <button data-idx=\"${idx}\" class=\"download-csv\">CSV</button></div></div>`;
+    title.className = 'table-meta';
+    const src = t.frameUrl ? ` <span class="muted">@ ${shortUrl(t.frameUrl)}</span>` : '';
+    const cols = Array.isArray(t.headers) && t.headers.length ? t.headers.length : (Array.isArray(t.rows) && t.rows[0] ? t.rows[0].length : 0);
+    const rcount = Array.isArray(t.rows) ? t.rows.length : 0;
+    title.innerHTML = `<div style="flex:1;"><strong>#${idx+1}</strong> <span class="muted">${t.type || 'table'}</span> <span class="muted">${(t.selector || '').slice(0,80)}</span>${src}</div><div class="table-actions" style="flex:1;"><span class="pill">${rcount}×${cols}</span><button data-idx="${idx}" class="open-on-page">Open</button><button data-idx="${idx}" class="download-csv">CSV</button></div>`;
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
     const table = document.createElement('table');
@@ -131,8 +145,8 @@ function renderTables(tables = []) {
       thead.appendChild(tr); table.appendChild(thead);
     }
     const tbody = document.createElement('tbody');
-    const rows = Array.isArray(t.rows) ? t.rows.slice(0, 20) : [];
-    rows.forEach(r=>{
+    const previewRows = Array.isArray(t.rows) ? t.rows.slice(0, 12) : [];
+    previewRows.forEach(r=>{
       const tr = document.createElement('tr');
       r.forEach(c=>{ const td = document.createElement('td'); td.textContent = String(c ?? ''); tr.appendChild(td); });
       tbody.appendChild(tr);
@@ -144,27 +158,65 @@ function renderTables(tables = []) {
     wrap.appendChild(scaler);
     card.appendChild(title);
     card.appendChild(wrap);
+    // Native preview container (hidden until used)
+    const nwrap = document.createElement('div');
+    nwrap.className = 'native-wrap';
+    nwrap.style.display = 'none';
+    card.appendChild(nwrap);
     hostEl.appendChild(card);
   });
 
-  // Wire copy/download
-  hostEl.querySelectorAll('.copy-json').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const i = Number(btn.getAttribute('data-idx'));
-      const t = tables[i];
-      copyToClipboard(JSON.stringify(t, null, 2));
-    });
-  });
+  // Wire download
   hostEl.querySelectorAll('.download-csv').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = Number(btn.getAttribute('data-idx'));
-      const t = tables[i];
+      const t = sorted[i];
       const delim = chooseCsvDelimiter();
       const csv = tableToCSV(t, { delimiter: delim });
       const host = safeHostFromResult(LAST_RESULT);
       downloadFile(`${host}-table-${i+1}.csv`, csv, 'text/csv;charset=utf-8;', { bom: true });
     });
   });
+  hostEl.querySelectorAll('.open-on-page').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        const i = Number(btn.getAttribute('data-idx'));
+        const t = sorted[i];
+        // Toggle native preview: fetch snapshot and display in iframe
+        const container = btn.closest('.table-meta')?.parentElement; // parent is card container
+        const nwrap = container?.querySelector('.native-wrap');
+        const tableWrap = container?.querySelector('.table-wrap');
+        if (nwrap && tableWrap) {
+          // fetch snapshot lazily
+          if (!nwrap.querySelector('iframe')) {
+            const res = await chrome.runtime.sendMessage({ type: 'GET_TABLE_SNAPSHOT', payload: { selector: t.selector, frameId: t.frameId } });
+            if (res?.ok && res.html) {
+              const iframe = document.createElement('iframe');
+              iframe.setAttribute('sandbox', 'allow-same-origin');
+              iframe.srcdoc = res.html;
+              nwrap.appendChild(iframe);
+            }
+          }
+          // show native, hide ai-rendered table
+          tableWrap.style.display = 'none';
+          nwrap.style.display = 'block';
+        }
+        // Also scroll/flash on page
+        await chrome.runtime.sendMessage({ type: 'HIGHLIGHT_TABLE', payload: { selector: t.selector, frameId: t.frameId } });
+      } catch (e) {
+        setOutput('Open error: ' + e.message);
+      }
+    });
+  });
+}
+
+function shortUrl(u) {
+  try {
+    const url = new URL(u);
+    const path = url.pathname || '/';
+    const shortPath = path.length > 30 ? path.slice(0,30) + '…' : path;
+    return `${url.hostname}${shortPath}`;
+  } catch { return (u || '').slice(0, 40); }
 }
 
 function tableToCSV(t, { delimiter = ',' } = {}) {
@@ -181,6 +233,11 @@ function tableToCSV(t, { delimiter = ',' } = {}) {
 
 function chooseCsvDelimiter() {
   try {
+    const sel = document.getElementById('csvDelimiter');
+    const override = sel && sel.value;
+    if (override && override !== 'auto') return override;
+  } catch {}
+  try {
     const host = location.hostname || '';
     const lang = navigator.language || '';
     if (host.endsWith('.com.tr') || lang.toLowerCase().startsWith('tr')) return ';';
@@ -196,21 +253,12 @@ function safeHostFromResult(res) {
   } catch { return 'page'; }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    const cfg = await loadConfig();
-    if (cfg) writeConfigToUI(cfg);
+  document.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const cfg = await loadConfig();
+      if (cfg) writeConfigToUI(cfg);
 
-    $("save").addEventListener('click', async () => {
-      try {
-        await saveConfig();
-        setOutput('Saved.');
-      } catch (e) { setOutput('Save error: ' + e.message); }
-    });
-    $("preview").addEventListener('click', async () => {
-      setOutput('Running...');
-      try { await previewScrape(); } catch (e) { setOutput('Preview error: ' + e.message); }
-    });
+    // advanced controls removed
     $("scrape").addEventListener('click', async () => {
       try {
         const result = await runAutoScrape();
@@ -222,17 +270,44 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) { setOutput('Error: ' + e.message); }
       finally { setLoading(false); }
     });
-    $("copy").addEventListener('click', async () => {
-      const text = $("output").textContent || '';
-      copyToClipboard(text);
-      setOutput('Copied to clipboard.');
+    // Copy button removed in simplified UI
+    $("selectTable").addEventListener('click', async () => {
+      try {
+        setOutput('Selection started. Click a table on the page.');
+        await chrome.runtime.sendMessage({ type: 'START_SELECTION' });
+      } catch (e) {
+        setOutput('Selection error: ' + e.message);
+      }
     });
-    $("download").addEventListener('click', async () => {
-      const text = $("output").textContent || '';
-      if (!text) return setOutput('Nothing to download.');
-      const host = safeHostFromResult(LAST_RESULT);
-      downloadFile(`${host}-scrape.json`, text, 'application/json');
-    });
+
+    // Note: side panel is default on action click; no need for an explicit button here
+    
+      $("download").addEventListener('click', async () => {
+        try {
+          let data = LAST_RESULT;
+          if (!data) { data = await runAutoScrape(); LAST_RESULT = data; }
+          const host = safeHostFromResult(LAST_RESULT);
+          downloadFile(`${host}-scrape.json`, JSON.stringify(data, null, 2), 'application/json');
+        } catch (e) {
+          setOutput('Download error: ' + e.message);
+        }
+      });
+
+      const dlBestBtn = document.getElementById('downloadBestCsv');
+      if (dlBestBtn) {
+        dlBestBtn.addEventListener('click', () => {
+          try {
+            const tables = Array.isArray(LAST_RESULT?.tables) ? LAST_RESULT.tables : [];
+            if (!tables.length) { setOutput('No tables to download.'); return; }
+            const sorted = [...tables].sort((a,b) => (b.score||0) - (a.score||0));
+            const best = sorted[0];
+            const delim = chooseCsvDelimiter();
+            const host = safeHostFromResult(LAST_RESULT);
+            const csv = tableToCSV(best, { delimiter: delim });
+            downloadFile(`${host}-best.csv`, csv, 'text/csv;charset=utf-8;', { bom: true });
+          } catch (e) { setOutput('Download error: ' + e.message); }
+        });
+      }
 
     const be = await loadBackend();
     const hasBackend = !!(be && be.url);
@@ -252,6 +327,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     $("openOptions").addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+    // If a selection was made while the popup was closed, incorporate it
+    try {
+      const r = await chrome.runtime.sendMessage({ type: 'GET_LAST_SELECTION', payload: { consume: true } });
+      const sel = r?.selection;
+      if (sel && sel.table) {
+        if (!LAST_RESULT) {
+          LAST_RESULT = { page: { url: 'selection', title: document.title || 'Selection' }, timestamp: new Date().toISOString(), tables: [] };
+        }
+        LAST_RESULT.tables = Array.isArray(LAST_RESULT.tables) ? LAST_RESULT.tables : [];
+        LAST_RESULT.tables.unshift(sel.table);
+        setOutput(LAST_RESULT);
+        updatePills(LAST_RESULT);
+        renderTables(LAST_RESULT.tables);
+        $("results").style.display = 'block';
+      }
+    } catch {}
+
+    // Zoom slider removed; previews render at fixed compact scale
+
+    // If side panel is open, listen for selection ready to live-update
+    try {
+      chrome.runtime.onMessage.addListener(async (msg) => {
+        if (msg && msg.type === 'SELECTION_READY') {
+          try {
+            const r2 = await chrome.runtime.sendMessage({ type: 'GET_LAST_SELECTION', payload: { consume: true } });
+            const sel2 = r2?.selection;
+            if (sel2 && sel2.table) {
+              if (!LAST_RESULT) {
+                LAST_RESULT = { page: { url: 'selection', title: document.title || 'Selection' }, timestamp: new Date().toISOString(), tables: [] };
+              }
+              LAST_RESULT.tables = Array.isArray(LAST_RESULT.tables) ? LAST_RESULT.tables : [];
+              LAST_RESULT.tables.unshift(sel2.table);
+              setOutput(LAST_RESULT);
+              updatePills(LAST_RESULT);
+              renderTables(LAST_RESULT.tables);
+              $("results").style.display = 'block';
+            }
+          } catch {}
+        }
+      });
+    } catch {}
+
+    // Live-update when selection completes (e.g., side panel stays open)
+    try {
+      chrome.runtime.onMessage.addListener(async (msg) => {
+        if (msg && msg.type === 'SELECTION_READY') {
+          try {
+            const r2 = await chrome.runtime.sendMessage({ type: 'GET_LAST_SELECTION', payload: { consume: true } });
+            const sel2 = r2?.selection;
+            if (sel2 && sel2.table) {
+              if (!LAST_RESULT) {
+                LAST_RESULT = { page: { url: 'selection', title: document.title || 'Selection' }, timestamp: new Date().toISOString(), tables: [] };
+              }
+              LAST_RESULT.tables = Array.isArray(LAST_RESULT.tables) ? LAST_RESULT.tables : [];
+              LAST_RESULT.tables.unshift(sel2.table);
+              setOutput(LAST_RESULT);
+              updatePills(LAST_RESULT);
+              renderTables(LAST_RESULT.tables);
+              $("results").style.display = 'block';
+            }
+          } catch {}
+        }
+      });
+    } catch {}
   } catch (e) {
     setOutput('Init error: ' + e.message);
   }

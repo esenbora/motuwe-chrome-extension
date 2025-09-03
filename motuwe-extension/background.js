@@ -5,6 +5,9 @@ const STORAGE_KEYS = {
   config: 'motuwe:config',
   backend: 'motuwe:backend',
 };
+const SESSION_KEYS = {
+  lastSelection: 'motuwe:lastSelection',
+};
 
 // Basic exponential backoff with jitter
 async function withRetries(fn, { retries = 2, baseDelayMs = 500 } = {}) {
@@ -45,6 +48,18 @@ async function ensureContentScript(tabId) {
   });
 }
 
+async function ensurePageCss(tabId) {
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId, allFrames: true },
+      files: ['css/inject.css']
+    });
+  } catch (e) {
+    // Non-fatal: content script will inject minimal inline styles as fallback
+    console.warn('insertCSS failed:', e?.message || e);
+  }
+}
+
 async function saveStorage(key, value) {
   await chrome.storage.sync.set({ [key]: value });
 }
@@ -52,6 +67,16 @@ async function saveStorage(key, value) {
 async function loadStorage(key, defaults = null) {
   const res = await chrome.storage.sync.get(key);
   return res[key] ?? defaults;
+}
+
+async function saveSession(key, value) {
+  try { await chrome.storage.session.set({ [key]: value }); } catch (e) { console.warn('session set failed', e?.message || e); }
+}
+async function loadSession(key) {
+  try { const r = await chrome.storage.session.get(key); return r[key]; } catch { return undefined; }
+}
+async function clearSession(key) {
+  try { await chrome.storage.session.remove(key); } catch {}
 }
 
 async function backgroundFetch(input, init = {}, { timeoutMs = 10000, retries = 1 } = {}) {
@@ -104,7 +129,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           frames = [];
         }
 
-        const calls = (frames.length ? frames : [{ frameId: undefined }]).map(async (f) => {
+        // Filter out non-HTTP(S) or blank frames for stability
+        const filtered = (frames || []).filter((f) => {
+          const u = (f && f.url) ? f.url : '';
+          return u && /^https?:/i.test(u) && u !== 'about:blank';
+        });
+
+        const targetFrames = filtered.length ? filtered : [{ frameId: undefined }];
+
+        const calls = targetFrames.map(async (f) => {
           try {
             const res = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_SCRAPE', payload: msg.payload }, f.frameId !== undefined ? { frameId: f.frameId } : undefined);
             return { ok: true, frameId: f.frameId, url: f.url, res };
@@ -116,7 +149,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const results = await Promise.all(calls);
 
         // Merge: prefer top frame for page info; concat tables/links
-        const topFrame = (frames.find((fr) => fr.parentFrameId === -1) || frames[0]) || { frameId: undefined };
+        const topFrame = ((filtered.find((fr) => fr.parentFrameId === -1) || filtered[0]) || { frameId: undefined });
         const topRes = results.find((r) => r.ok && r.frameId === topFrame.frameId) || results.find((r) => r.ok);
         const merged = topRes?.res ? JSON.parse(JSON.stringify(topRes.res)) : { page: {}, timestamp: new Date().toISOString() };
         merged.tables = [];
@@ -139,6 +172,79 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, result: merged });
         break;
       }
+      case 'START_SELECTION': {
+        const tab = await getActiveTab();
+        await ensureContentScript(tab.id);
+        await ensurePageCss(tab.id);
+        try {
+          const res = await chrome.tabs.sendMessage(tab.id, { type: 'START_SELECTION' });
+          // Respond immediately that selection mode is active; actual result will be stored in session
+          sendResponse({ ok: true, started: true, info: res });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
+      case 'STOP_SELECTION': {
+        try {
+          const tab = await getActiveTab();
+          await chrome.tabs.sendMessage(tab.id, { type: 'STOP_SELECTION' });
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
+      case 'SELECTION_RESULT': {
+        try {
+          // Payload shape: { table }
+          const payload = msg.payload || {};
+          await saveSession(SESSION_KEYS.lastSelection, { ...payload, timestamp: Date.now() });
+          try { chrome.runtime.sendMessage({ type: 'SELECTION_READY' }); } catch {}
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
+      case 'GET_LAST_SELECTION': {
+        try {
+          const val = await loadSession(SESSION_KEYS.lastSelection);
+          if (msg.payload && msg.payload.consume && val !== undefined) {
+            await clearSession(SESSION_KEYS.lastSelection);
+          }
+          sendResponse({ ok: true, selection: val });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
+      case 'HIGHLIGHT_TABLE': {
+        try {
+          const tab = await getActiveTab();
+          await ensureContentScript(tab.id);
+          const { selector, frameId } = msg.payload || {};
+          const target = frameId !== undefined ? { frameId } : undefined;
+          const res = await chrome.tabs.sendMessage(tab.id, { type: 'HIGHLIGHT_TABLE', selector }, target);
+          sendResponse(res || { ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
+      case 'GET_TABLE_SNAPSHOT': {
+        try {
+          const tab = await getActiveTab();
+          await ensureContentScript(tab.id);
+          const { selector, frameId } = msg.payload || {};
+          const target = frameId !== undefined ? { frameId } : undefined;
+          const res = await chrome.tabs.sendMessage(tab.id, { type: 'GET_TABLE_SNAPSHOT', payload: { selector } }, target);
+          sendResponse(res || { ok: false, error: 'No response' });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+        break;
+      }
       case 'BACKGROUND_FETCH': {
         const res = await backgroundFetch(msg.payload.url, msg.payload.init, msg.payload.options || {});
         sendResponse({ ok: true, response: res });
@@ -154,4 +260,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (_) {}
   });
   return true; // keep sendResponse async
+});
+
+// Prefer opening Side Panel on action click
+try {
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
+} catch {}
+
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    if (chrome.sidePanel && chrome.sidePanel.open) {
+      try { await chrome.sidePanel.setOptions({ tabId: tab.id, path: 'popup.html', enabled: true }); } catch {}
+      await chrome.sidePanel.open({ tabId: tab.id });
+    } else {
+      await chrome.windows.create({ url: chrome.runtime.getURL('popup.html'), type: 'popup', width: 560, height: 720, focused: true });
+    }
+  } catch (e) {
+    console.warn('Open panel on action failed:', e?.message || e);
+  }
 });

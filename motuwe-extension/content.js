@@ -1,5 +1,16 @@
 // Motuwe Scraper - Content Script
 // Receives RUN_SCRAPE and extracts page data per config.
+// Idempotent guard: avoid duplicate listeners when reinjected
+if (typeof window !== 'undefined') {
+  try {
+    if (!window.__motuweInjected) {
+      window.__motuweInjected = true;
+    }
+  } catch {}
+}
+
+// Scan tuning flag set per run
+let __motuweDeepScan = false;
 
 function nowIso() {
   return new Date().toISOString();
@@ -15,6 +26,10 @@ function tryParseJSON(text) {
 
 function isTransfermarktHost() {
   try { return /(^|\.)transfermarkt\./i.test(location.hostname); } catch { return false; }
+}
+
+function isYouTubeHost() {
+  try { return /(^|\.)youtube\.com$/i.test(location.hostname) || /(^|\.)m\.youtube\.com$/i.test(location.hostname); } catch { return false; }
 }
 
 async function acceptCookiesTM() {
@@ -229,8 +244,15 @@ function extractTransfermarktKV() {
 function extractTransfermarktTables() {
   const sel = 'table.items, table.tabelle, table.auflistung, table.responsive-table';
   const tables = Array.from(document.querySelectorAll(sel));
-  return tables.map((t) => tableToMatrix(t));
+  return tables.map((t) => {
+    const m = tableToMatrix(t);
+    m.type = 'tm-table';
+    m.site = 'transfermarkt';
+    return m;
+  });
 }
+
+// tm-roster removed per request; rely on generic table extraction
 
 function extractTransfermarktBasics() {
   const name = getText(document.querySelector('h1[itemprop="name"], h1.spielername, h1')); 
@@ -256,21 +278,46 @@ function isVisible(el) {
 }
 
 function tableToMatrix(tableEl) {
-  const headers = [];
-  const headerRowEls = tableEl.querySelectorAll('thead tr, tr:has(th)');
-  if (headerRowEls.length) {
-    const first = headerRowEls[0];
-    const ths = Array.from(first.querySelectorAll('th'));
-    for (const th of ths) headers.push(getText(th));
+  const allRows = Array.from(tableEl.querySelectorAll('tr')).filter(tr => tr.querySelector('td,th'));
+  const grid = [];
+  let maxCols = 0;
+  for (let r = 0; r < allRows.length; r++) {
+    const rowEl = allRows[r];
+    const cells = Array.from(rowEl.querySelectorAll('th,td'));
+    grid[r] = grid[r] || [];
+    let c = 0;
+    for (const cell of cells) {
+      while (grid[r][c] !== undefined) c++;
+      const colSpan = Math.max(1, parseInt(cell.getAttribute('colspan') || '1', 10));
+      const rowSpan = Math.max(1, parseInt(cell.getAttribute('rowspan') || '1', 10));
+      const text = getText(cell);
+      for (let rr = 0; rr < rowSpan; rr++) {
+        const rIndex = r + rr;
+        grid[rIndex] = grid[rIndex] || [];
+        for (let cc = 0; cc < colSpan; cc++) {
+          const cIndex = c + cc;
+          grid[rIndex][cIndex] = text;
+          if (cIndex + 1 > maxCols) maxCols = cIndex + 1;
+        }
+      }
+      c += colSpan;
+    }
   }
-  const rows = [];
-  const rowEls = Array.from(tableEl.querySelectorAll('tbody tr, tr')).filter((tr) => tr.querySelector('td,th'));
-  for (const r of rowEls) {
-    const cells = Array.from(r.querySelectorAll('th,td')).map((c) => getText(c));
-    if (cells.length) rows.push(cells);
+  const headerRows = Array.from(tableEl.querySelectorAll('thead tr'));
+  let headers = [];
+  if (headerRows.length) {
+    const headIndex = allRows.indexOf(headerRows[headerRows.length - 1]);
+    if (headIndex >= 0) headers = (grid[headIndex] || []).map((h, i) => h || `Col ${i + 1}`);
+  } else {
+    const thIndex = allRows.findIndex(r => r.querySelector('th'));
+    if (thIndex >= 0) headers = (grid[thIndex] || []).map((h, i) => h || `Col ${i + 1}`);
   }
+  const rows = grid.filter((row) => row && row.length && row.some(v => v && String(v).trim().length));
   const objects = headers.length ? rows.map((row) => Object.fromEntries(headers.map((h, i) => [h || String(i), row[i] ?? '']))) : [];
-  return { type: 'html-table', selector: cssPath(tableEl), headers, rows, objects };
+  const selector = cssPath(tableEl);
+  let elWidth = 0, elHeight = 0, area = 0;
+  try { const r = tableEl.getBoundingClientRect(); elWidth = Math.round(r.width); elHeight = Math.round(r.height); area = Math.round(r.width * r.height); } catch {}
+  return { type: 'html-table', selector, headers, rows, objects, rowsCount: rows.length, colsCount: maxCols, elWidth, elHeight, area };
 }
 
 function ariaGridToMatrix(root) {
@@ -284,7 +331,8 @@ function ariaGridToMatrix(root) {
     if (cells.length) rows.push(cells);
   }
   const objects = headers.length ? rows.map((row) => Object.fromEntries(headers.map((h, i) => [h || String(i), row[i] ?? '']))) : [];
-  return { type: 'aria-grid', selector: cssPath(root), headers, rows, objects };
+  let elWidth = 0, elHeight = 0, area = 0; try { const r = root.getBoundingClientRect(); elWidth = Math.round(r.width); elHeight = Math.round(r.height); area = Math.round(r.width * r.height); } catch {}
+  return { type: 'aria-grid', selector: cssPath(root), headers, rows, objects, elWidth, elHeight, area };
 }
 
 function cssPath(el) {
@@ -315,8 +363,9 @@ function extractDisplayTables() {
   const ariaRoots = Array.from(document.querySelectorAll('[role="table"], [role="grid"]')).filter(isVisible).slice(0, 20);
   for (const r of ariaRoots) out.push(ariaGridToMatrix(r));
 
-  // Detect CSS display table/gird-like structures
-  const all = Array.from(document.querySelectorAll('*')).slice(0, 2000);
+  // Detect CSS display table/grid-like structures (capped unless deep scan)
+  const cap = __motuweDeepScan ? 2000 : 800;
+  const all = Array.from(document.querySelectorAll('*')).slice(0, cap);
   for (const el of all) {
     const cs = getComputedStyle(el);
     if (!cs) continue;
@@ -324,18 +373,170 @@ function extractDisplayTables() {
       out.push({ type: 'css-table', selector: cssPath(el), headers: [], rows: Array.from(el.querySelectorAll('tr')).map((r) => Array.from(r.children).map((c) => getText(c))), objects: [] });
     }
   }
+
+  // Pseudo-table detection: repeated cards/lists → table
+  try {
+    const pseudo = detectPseudoTables({ minItems: 5, maxContainers: 30, capNodes: __motuweDeepScan ? 5000 : 2000 });
+    if (pseudo.length) out.push(...pseudo);
+  } catch {}
   // Remove duplicates by selector+type
   const seen = new Set();
-  return out.filter((t) => {
+  let deduped = out.filter((t) => {
     const k = `${t.type}|${t.selector}`;
     if (seen.has(k)) return false;
     seen.add(k);
     return t.rows?.length;
   });
+  // Keep all types; rely on scoring to de-prioritize noisy css-table
+  // Helpers for scoring
+  const alphaRe = /[A-Za-z--]/; // rough alpha including some accents
+  const isMostlyNumeric = (s) => {
+    const str = String(s || '').trim();
+    if (!str) return false;
+    if (/^[-+]?\d+[\d.,/\-\s]*$/.test(str)) return true; // numbers, dates-like
+    if (/^(\d{1,2}[./-]){2}\d{2,4}$/.test(str)) return true; // date
+    return false;
+  };
+  const headerQualityScore = (headers = []) => {
+    if (!headers || !headers.length) return 0;
+    let good = 0;
+    for (const h of headers) {
+      const s = String(h || '').trim();
+      if (s && alphaRe.test(s) && s.length >= 2 && !/^col\s*\d+$/i.test(s)) good++;
+    }
+    return good / headers.length;
+  };
+
+  // Score and sort best-first
+  for (const t of deduped) {
+    const rc = Array.isArray(t.rows) ? t.rows.length : (t.rowsCount || 0);
+    const cc = Array.isArray(t.headers) && t.headers.length ? t.headers.length : (Array.isArray(t.rows) && t.rows[0] ? t.rows[0].length : (t.colsCount || 0));
+    const hq = headerQualityScore(t.headers || []);
+    // Ratios
+    let total = 0, numeric = 0, nonempty = 0;
+    try {
+      for (const row of (t.rows || [])) {
+        for (const v of row) {
+          total++;
+          const s = String(v || '').trim();
+          if (s) nonempty++;
+          if (isMostlyNumeric(s)) numeric++;
+        }
+      }
+    } catch {}
+    const fillRatio = total ? nonempty / total : 0.5;
+    const numericRatio = total ? numeric / total : 0.0;
+
+    // Base: prefer moderate density (avoid ultra-wide/ultra-long noise grids)
+    const density = Math.min(4000, rc * Math.min(cc, 30));
+    let score = density + Math.floor(hq * 500) + Math.floor(fillRatio * 300);
+    // Penalties
+    if (cc > 24) score -= (cc - 24) * 60;
+    if (numericRatio > 0.65) score -= Math.floor((numericRatio - 0.65) * 800);
+    // Area has smaller weight
+    score += Math.min(800, Math.floor((t.area || 0) / 4000));
+
+    // Heuristic boosts for meaningful headers (common table words)
+    try {
+      const headerStr = (t.headers || []).join(' ').toLowerCase();
+      const keywords = ['oyuncu','player','poz','position','kulüp','club','uyruk','nation','piyasa','market','age','yaş','doğum','born'];
+      if (keywords.some(k => headerStr.includes(k))) score += 600;
+    } catch {}
+
+    t.rowsCount = rc; t.colsCount = cc; t.score = score;
+  }
+  return deduped.sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
+// ---------- Pseudo-table detection (domain-agnostic) ----------
+function getSig(el) {
+  try {
+    const tag = el.tagName.toLowerCase();
+    const cls = (el.className || '').toString().trim().split(/\s+/).filter(Boolean);
+    const first = cls.slice(0, 2).join('.');
+    return first ? `${tag}.${first}` : tag;
+  } catch { return el.tagName ? el.tagName.toLowerCase() : 'node'; }
+}
+
+function detectRepeatedChildGroup(container) {
+  const groups = new Map();
+  for (const ch of Array.from(container.children)) {
+    const sig = getSig(ch);
+    const g = groups.get(sig) || [];
+    g.push(ch);
+    groups.set(sig, g);
+  }
+  let best = null;
+  for (const [sig, arr] of groups) {
+    if (arr.length >= 5) {
+      if (!best || arr.length > best.items.length) best = { sig, items: arr };
+    }
+  }
+  // Accept if majority of children belong to the group
+  const total = container.children.length || 1;
+  if (best && best.items.length / total >= 0.5) return best.items;
+  return null;
+}
+
+function textOr(el, sel) {
+  try { const n = el.querySelector(sel); return n ? getText(n) : ''; } catch { return ''; }
+}
+function hrefOr(el, sel) {
+  try { const a = el.querySelector(sel); let href = a ? (a.href || a.getAttribute('href')) : ''; if (href && !/^https?:/i.test(href)) href = new URL(href, location.href).href; return href || ''; } catch { return ''; }
+}
+function imageOr(el) {
+  try { const img = el.querySelector('img'); let src = img ? (img.currentSrc || img.src || img.getAttribute('src')) : ''; if (src && !/^https?:/i.test(src)) src = new URL(src, location.href).href; const alt = img?.getAttribute('alt') || ''; return { src: src || '', alt }; } catch { return { src: '', alt: '' }; }
+}
+
+function detectPseudoTables({ minItems = 5, maxContainers = 30, capNodes = 2000 } = {}) {
+  const results = [];
+  const nodes = Array.from(document.querySelectorAll('body *')).slice(0, capNodes);
+  const containers = nodes.filter((n) => n.children && n.children.length >= minItems && isVisible(n)).slice(0, 200);
+  let picked = 0;
+  for (const c of containers) {
+    if (picked >= maxContainers) break;
+    const group = detectRepeatedChildGroup(c);
+    if (!group) continue;
+    const items = group.filter(isVisible).slice(0, 200);
+    if (items.length < minItems) continue;
+
+    const headers = ['Title', 'URL', 'Image', 'Price', 'Date'];
+    const rows = [];
+    for (const it of items) {
+      const title = textOr(it, 'h1, h2, h3, h4, h5, h6, [role="heading"], .title, a[title], a');
+      const url = hrefOr(it, 'a[href]');
+      const img = imageOr(it);
+      const priceTxt = (function() {
+        const txt = getText(it);
+        const p = parsePrice(txt);
+        return p ? p.raw : '';
+      })();
+      const dateTxt = (function() {
+        const t = it.querySelector('time'); if (t) return getText(t);
+        const m = String(getText(it)).match(/\b(\d{1,2}[.\/ -]\d{1,2}[.\/ -]\d{2,4}|\d{4}[.\/-]\d{1,2}[.\/-]\d{1,2})\b/);
+        return m ? m[0] : '';
+      })();
+      if ([title, url, img.src, priceTxt, dateTxt].some((v) => String(v||'').trim())) {
+        rows.push([title, url, img.src, priceTxt, dateTxt]);
+      }
+    }
+    if (rows.length >= minItems) {
+      const selector = cssPath(c);
+      const table = { type: 'pseudo-table', selector, headers, rows, objects: rows.map((r) => ({ Title: r[0], URL: r[1], Image: r[2], Price: r[3], Date: r[4] })) };
+      // modest boost if we captured meaningful titles and urls
+      const titleFilled = rows.filter((r) => r[0]).length / rows.length;
+      const urlFilled = rows.filter((r) => r[1]).length / rows.length;
+      table.score = Math.floor(800 * titleFilled + 600 * urlFilled + Math.min(2000, rows.length * (headers.length || 5)));
+      results.push(table);
+      picked++;
+    }
+  }
+  return results;
 }
 
 async function runScrape(config = {}) {
   const cfg = config || {};
+  try { __motuweDeepScan = !!cfg.deepScan; } catch { __motuweDeepScan = false; }
   if (cfg.deepScan) {
     await autoScroll({});
   }
@@ -353,7 +554,14 @@ async function runScrape(config = {}) {
     const tmBasics = extractTransfermarktBasics();
     const tmTables = extractTransfermarktTables();
     const data = { ...base, site: 'transfermarkt', tm: tmBasics };
-    data.tables = (data.tables || []).concat(tmTables);
+    // Include both specialized roster tables and generic detected tables
+    try {
+      const autoTables = extractDisplayTables();
+      const merged = dedupeTables([...(tmTables || []), ...(autoTables || [])]);
+      if (merged.length) data.tables = merged;
+    } catch {
+      if (tmTables?.length) data.tables = tmTables;
+    }
     if (mode === 'advanced') {
       data.selectors = extractBySelectors(cfg.selectors || []);
       if (cfg.includeOpenGraph) data.openGraph = extractOpenGraph();
@@ -367,6 +575,21 @@ async function runScrape(config = {}) {
       const links = extractLinks({ linkSelector: cfg.linkSelector, linkPatterns: cfg.linkPatterns || ["/spieler/", "/player/"] });
       data.links = links;
     }
+    return data;
+  }
+
+  // Site-specific: YouTube (playlist, search, channel videos)
+  if (isYouTubeHost()) {
+    const yt = extractYouTubeData();
+    const data = { ...base, site: 'youtube', yt };
+    if (Array.isArray(yt?.tables) && yt.tables.length) data.tables = (data.tables || []).concat(yt.tables);
+    if (cfg.collectLinks || cfg.linkPatterns) {
+      const links = extractLinks({ linkSelector: 'a#video-title, ytd-video-renderer a#video-title, ytd-grid-video-renderer a#video-title', linkPatterns: cfg.linkPatterns });
+      data.links = links;
+    }
+    // Always include OpenGraph/JSON-LD for YouTube context
+    data.openGraph = extractOpenGraph();
+    data.jsonLd = extractJsonLd();
     return data;
   }
 
@@ -394,18 +617,204 @@ async function runScrape(config = {}) {
   return data;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  (async () => {
-    if (msg?.type === 'RUN_SCRAPE') {
-      const result = await runScrape(msg.payload || {});
-      sendResponse(result);
-    }
-  })().catch((err) => {
-    console.error('Content script error:', err);
-    try { sendResponse({ error: String(err?.message || err) }); } catch (_) {}
+function dedupeTables(arr = []) {
+  const seen = new Set();
+  const out = [];
+  for (const t of arr) {
+    const key = `${t.type || 'table'}|${t.selector || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+// Visual selection state and helpers
+let __motuweSelecting = false;
+let __motuweHighlightEl = null;
+let __motuweHandlersBound = false;
+
+function ensureInlineStyles() {
+  try {
+    if (document.getElementById('motuwe-inline-style')) return;
+    const style = document.createElement('style');
+    style.id = 'motuwe-inline-style';
+    style.textContent = `
+      .motuwe-overlay-highlight{box-shadow:0 0 0 3px #4CAF50,0 0 0 6px rgba(76,175,80,.3)!important;position:relative!important;z-index:2147483646!important}
+      .motuwe-selection-guide{position:fixed!important;top:10px!important;left:50%!important;transform:translateX(-50%)!important;background:rgba(0,0,0,.9)!important;color:#fff!important;padding:10px 20px!important;border-radius:6px!important;font-size:13px!important;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,sans-serif!important;z-index:2147483647!important;pointer-events:none!important}
+      .motuwe-selecting *{user-select:none!important}
+      .motuwe-cancel-hint{opacity:.8;font-size:12px;margin-left:8px}
+      .motuwe-pointer{cursor:crosshair!important}
+    `;
+    document.documentElement.appendChild(style);
+  } catch {}
+}
+
+function highlight(el) {
+  try {
+    if (__motuweHighlightEl === el) return;
+    if (__motuweHighlightEl) __motuweHighlightEl.classList.remove('motuwe-overlay-highlight');
+    __motuweHighlightEl = el;
+    if (el) el.classList.add('motuwe-overlay-highlight');
+  } catch {}
+}
+
+function clearHighlight() { highlight(null); }
+
+function findTableLike(target) {
+  if (!target) return null;
+  let el = target.closest('table,[role="table"],[role="grid"]');
+  if (!el) return null;
+  return el;
+}
+
+function pickMatrixForElement(el) {
+  if (!el) return null;
+  const role = (el.getAttribute && (el.getAttribute('role') || '')).toLowerCase();
+  if (el.tagName === 'TABLE') return tableToMatrix(el);
+  if (role === 'table' || role === 'grid') return ariaGridToMatrix(el);
+  // fallback
+  return tableToMatrix(el);
+}
+
+function bindSelectionHandlers() {
+  if (__motuweHandlersBound) return;
+  __motuweHandlersBound = true;
+  document.addEventListener('mousemove', __motuweOnMove, true);
+  document.addEventListener('click', __motuweOnClick, true);
+  document.addEventListener('keydown', __motuweOnKey, true);
+}
+
+function unbindSelectionHandlers() {
+  if (!__motuweHandlersBound) return;
+  __motuweHandlersBound = false;
+  document.removeEventListener('mousemove', __motuweOnMove, true);
+  document.removeEventListener('click', __motuweOnClick, true);
+  document.removeEventListener('keydown', __motuweOnKey, true);
+}
+
+function showGuide() {
+  try {
+    if (document.getElementById('motuwe-selection-guide')) return;
+    const g = document.createElement('div');
+    g.id = 'motuwe-selection-guide';
+    g.className = 'motuwe-selection-guide';
+    g.textContent = 'Click a table to select';
+    const span = document.createElement('span');
+    span.className = 'motuwe-cancel-hint';
+    span.textContent = '(Esc to cancel)';
+    g.appendChild(span);
+    document.documentElement.appendChild(g);
+  } catch {}
+}
+
+function hideGuide() {
+  try { const g = document.getElementById('motuwe-selection-guide'); if (g) g.remove(); } catch {}
+}
+
+function __motuweOnMove(e) {
+  if (!__motuweSelecting) return;
+  try { document.documentElement.classList.add('motuwe-pointer'); } catch {}
+  const el = findTableLike(e.target);
+  highlight(el);
+}
+
+function __motuweOnClick(e) {
+  if (!__motuweSelecting) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = findTableLike(e.target);
+  if (!el) return;
+  const m = pickMatrixForElement(el);
+  const selector = cssPath(el);
+  stopSelection();
+  // Send selection result to background to store in session
+  try { chrome.runtime.sendMessage({ type: 'SELECTION_RESULT', payload: { table: { ...m, selector, frameUrl: location.href } } }); } catch {}
+  try { chrome.runtime.sendMessage({ type: 'STOP_SELECTION' }); } catch {}
+}
+
+function __motuweOnKey(e) {
+  if (!__motuweSelecting) return;
+  if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
+    stopSelection();
+  }
+}
+
+function startSelection() {
+  try { ensureInlineStyles(); } catch {}
+  __motuweSelecting = true;
+  bindSelectionHandlers();
+  showGuide();
+}
+
+function stopSelection() {
+  __motuweSelecting = false;
+  unbindSelectionHandlers();
+  clearHighlight();
+  hideGuide();
+  try { document.documentElement.classList.remove('motuwe-pointer'); } catch {}
+}
+
+// Register message listener once per page/frame
+if (!window.__motuweMsgHooked) {
+  window.__motuweMsgHooked = true;
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    (async () => {
+      switch (msg?.type) {
+        case 'RUN_SCRAPE': {
+          const result = await runScrape(msg.payload || {});
+          sendResponse(result);
+          break;
+        }
+        case 'START_SELECTION': {
+          startSelection();
+          sendResponse({ ok: true, started: true });
+          break;
+        }
+        case 'STOP_SELECTION': {
+          stopSelection();
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'HIGHLIGHT_TABLE': {
+          try {
+            const selector = msg.selector;
+            const el = selector ? document.querySelector(selector) : null;
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('motuwe-overlay-highlight');
+              setTimeout(() => { try { el.classList.remove('motuwe-overlay-highlight'); } catch {} }, 2000);
+              sendResponse({ ok: true });
+            } else {
+              sendResponse({ ok: false, error: 'Element not found' });
+            }
+          } catch (e) {
+            sendResponse({ ok: false, error: String(e?.message || e) });
+          }
+          break;
+        }
+        case 'GET_TABLE_SNAPSHOT': {
+          try {
+            const { selector } = msg.payload || {};
+            const html = getTableSnapshotHtml(selector);
+            sendResponse({ ok: true, html });
+          } catch (e) {
+            sendResponse({ ok: false, error: String(e?.message || e) });
+          }
+          break;
+        }
+        default:
+          // ignore
+          break;
+      }
+    })().catch((err) => {
+      console.error('Content script error:', err);
+      try { sendResponse({ error: String(err?.message || err) }); } catch (_) {}
+    });
+    return true;
   });
-  return true;
-});
+}
 // --- fbref support and comment-embedded table parsing ---
 function isFbrefHost() {
   try { return /(^|\.)fbref\.com$/i.test(location.hostname) || /fbref\.com$/i.test(location.hostname); } catch { return false; }
@@ -653,4 +1062,107 @@ function fbrefTableToMatrix(tableEl) {
     // fallback to generic
     return tableToMatrix(tableEl);
   }
+}
+
+// YouTube extraction
+function extractYouTubeData() {
+  try {
+    const tables = [];
+    // 1) Playlist panel on watch pages
+    const panelItems = Array.from(document.querySelectorAll('ytd-playlist-panel-video-renderer'));
+    if (panelItems.length >= 3) {
+      tables.push(cardListToTable(panelItems, {
+        title: 'a#video-title',
+        url: 'a#video-title',
+        channel: 'ytd-channel-name a',
+        duration: 'ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer span',
+        meta: '#metadata-line span'
+      }, { tableType: 'yt-playlist-panel' }));
+    }
+    // 2) Playlist page (grid/list of playlist videos)
+    const pv = Array.from(document.querySelectorAll('ytd-playlist-video-renderer'));
+    if (pv.length >= 3) {
+      tables.push(cardListToTable(pv, {
+        title: 'a#video-title', url: 'a#video-title', channel: 'ytd-channel-name a', duration: 'ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer span', meta: '#metadata-line span'
+      }, { tableType: 'yt-playlist' }));
+    }
+    // 3) Search results / channel videos
+    const vr = Array.from(document.querySelectorAll('ytd-video-renderer, ytd-grid-video-renderer'));
+    if (vr.length >= 3) {
+      tables.push(cardListToTable(vr, {
+        title: 'a#video-title', url: 'a#video-title', channel: 'ytd-channel-name a', duration: 'ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer span', meta: '#metadata-line span'
+      }, { tableType: 'yt-videos' }));
+    }
+    // Score boost for YouTube-specific tables
+    for (const t of tables) { t.site = 'youtube'; t.type = t.type || 'yt-table'; t.score = (t.score || 0) + 1200; }
+    return { tables };
+  } catch { return { tables: [] }; }
+}
+
+function cardListToTable(nodes, selectors, { tableType = 'cards' } = {}) {
+  const headers = ['Title', 'Channel', 'Duration', 'Views', 'URL'];
+  const rows = [];
+  for (const n of nodes) {
+    const get = (sel) => { try { return n.querySelector(sel); } catch { return null; } };
+    const text = (el) => (el && el.textContent ? el.textContent.trim() : '');
+    const anchor = get(selectors.title) || get('a#video-title');
+    const urlEl = get(selectors.url) || anchor;
+    const chanEl = get(selectors.channel) || get('ytd-channel-name a');
+    const durEl = get(selectors.duration);
+    const metaEls = Array.from(n.querySelectorAll(selectors.meta || '#metadata-line span')).map((x) => text(x)).filter(Boolean);
+    const title = text(anchor);
+    let url = urlEl ? urlEl.href || urlEl.getAttribute('href') : '';
+    if (url && !/^https?:/i.test(url)) { try { url = new URL(url, location.href).href; } catch {} }
+    const channel = text(chanEl);
+    const duration = text(durEl);
+    const views = (metaEls.find((m) => /view|görüntüleme|izlenme/i.test(m)) || '').trim();
+    rows.push([title, channel, duration, views, url]);
+  }
+  const selector = 'ytd-cards';
+  return { type: tableType, selector, headers, rows, objects: rows.map((r, i) => ({ Title: r[0], Channel: r[1], Duration: r[2], Views: r[3], URL: r[4], index: i+1 })) };
+}
+
+// Build a sandboxed HTML snapshot of a table preserving key styles
+function getTableSnapshotHtml(selector) {
+  const el = selector ? document.querySelector(selector) : null;
+  const table = el && (el.tagName === 'TABLE' ? el : el.querySelector('table'));
+  if (!table) throw new Error('Table not found');
+  const clone = table.cloneNode(true);
+
+  // Sanitize: remove script elements inside clone (unlikely, but safe)
+  Array.from(clone.querySelectorAll('script')).forEach((s) => s.remove());
+
+  // Inline essential computed styles for th/td (alignment, weight, colors)
+  const applyInline = (node, from) => {
+    try {
+      const cs = getComputedStyle(from);
+      const styles = [];
+      const push = (k, v) => { if (v) styles.push(`${k}:${v}`); };
+      push('text-align', cs.textAlign);
+      push('font-weight', cs.fontWeight);
+      push('color', cs.color);
+      const bg = cs.backgroundColor;
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') push('background-color', bg);
+      if (styles.length) node.setAttribute('style', (node.getAttribute('style') || '') + ';' + styles.join(';'));
+    } catch {}
+  };
+  const origCells = table.querySelectorAll('th,td');
+  const cloneCells = clone.querySelectorAll('th,td');
+  for (let i = 0; i < Math.min(origCells.length, cloneCells.length); i++) applyInline(cloneCells[i], origCells[i]);
+
+  // Absolute-ize image sources
+  Array.from(clone.querySelectorAll('img[src]')).forEach((img) => {
+    try { img.setAttribute('src', new URL(img.getAttribute('src'), location.href).href); } catch {}
+  });
+
+  const css = `
+    :root{color-scheme:dark light}
+    html,body{margin:0;padding:10px;background:#121212;color:#e8e8e8;font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, sans-serif}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #2a2a2a;padding:8px 10px}
+    thead th{position:sticky;top:0;background:#101010;color:#c8ffea;}
+    tbody tr:nth-child(odd){background:#161616}
+  `;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${clone.outerHTML}</body></html>`;
+  return html;
 }

@@ -11,36 +11,46 @@
         --fg:#ffffff;        /* white */
         --muted:#c7c7c7;     /* muted gray */
         --card:#1b1b1b;      /* dark panel */
-        --border:#2a2a2a;    /* subtle border */
+        --border:#262626;    /* subtle border */
         --accent:#00e676;    /* vivid green */
         --accent-2:#00c853;  /* deeper green */
         --danger:#ff5252;    /* alert red */
-        --zoom:0.9;          /* table preview scale */
+        --shadow: 0 6px 16px rgba(0,0,0,0.35);
+        --shadow-soft: 0 2px 8px rgba(0,0,0,0.25);
+        --zoom:0.85;         /* table preview scale (fixed, no slider) */
       }
       *{ box-sizing: border-box; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, sans-serif; margin:0; width:520px; background:var(--bg); color:var(--fg); }
-      header { background:linear-gradient(90deg, var(--bg), #0f0f0f 60%); padding:12px 14px; border-bottom:1px solid var(--border); }
-      h1 { font-size:16px; margin:0; letter-spacing:0.3px; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, sans-serif; margin:0; width:auto; min-width:320px; background:var(--bg); color:var(--fg); }
+      header { background:linear-gradient(90deg, #101010, #0e0e0e 60%); padding:12px 14px; border-bottom:1px solid var(--border); box-shadow: var(--shadow-soft); position: sticky; top:0; z-index: 2; }
+      h1 { font-size:16px; margin:0; letter-spacing:0.3px; font-weight:700; }
       main { padding:12px 14px; }
-      .row { display:flex; gap:8px; align-items:center; }
+      .row { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+      .toolbar { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px; }
       .row > * { flex: 1; }
-      button { appearance:none; border:1px solid var(--border); background:#101010; color:var(--fg); padding:8px 10px; border-radius:8px; cursor:pointer; font-weight:600; }
+      button { appearance:none; border:1px solid var(--border); background:#101010; color:var(--fg); padding:8px 10px; border-radius:10px; cursor:pointer; font-weight:600; box-shadow: var(--shadow-soft); }
       button.primary { background:var(--accent); border-color:var(--accent-2); color:#0a0a0a; }
-      button:hover { filter:brightness(1.08); }
+      button:hover { filter:brightness(1.08); transform: translateY(-0.5px); }
       label { display:block; margin-top:10px; font-weight:600; }
-      input, textarea { width:100%; background:var(--card); border:1px solid var(--border); color:var(--fg); padding:8px; border-radius:6px; }
+      input, textarea, select { width:100%; background:var(--card); border:1px solid var(--border); color:var(--fg); padding:8px; border-radius:8px; }
+      .compact-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
       textarea { height:90px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      details { margin-top:10px; border:1px solid var(--border); border-radius:8px; background:var(--card); }
+      details { margin-top:10px; border:1px solid var(--border); border-radius:10px; background:var(--card); box-shadow: var(--shadow-soft); }
       details > summary { padding:8px 10px; cursor:pointer; font-weight:700; }
       details[open] > :not(summary) { padding:0 10px 10px 10px; }
       section { margin-top:12px; }
       .muted { color:var(--muted); font-size:12px; }
-      pre { background:var(--card); border:1px solid var(--border); padding:8px; max-height:220px; overflow:auto; border-radius:6px; }
-      .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px; }
-      .table { width:100%; border-collapse: collapse; }
-      .table th, .table td { border:1px solid var(--border); padding:6px 8px; text-align:left; }
-      .table th { background:#111; color:#c8ffea; position:sticky; top:0; }
-      .table-wrap { max-height:280px; overflow:auto; border-radius:6px; }
+      pre { background:var(--card); border:1px solid var(--border); padding:10px; max-height:240px; overflow:auto; border-radius:10px; }
+      .card { background:linear-gradient(180deg,#161616,#131313); border:1px solid var(--border); border-radius:12px; padding:10px; box-shadow: var(--shadow); }
+      .table { width:100%; border-collapse: separate; border-spacing: 0; }
+      .table th, .table td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; }
+      .table thead th { background:linear-gradient(180deg,#111,#0e0e0e); color:#c8ffea; position:sticky; top:0; z-index:1; }
+      .table tbody tr:nth-child(odd) { background:#141414; }
+      .table tbody tr:hover { background:#171717; }
+      .table-wrap { max-height:320px; overflow:auto; border-radius:10px; border:1px solid var(--border); }
+      .native-wrap { height:320px; overflow:auto; border-radius:10px; border:1px solid var(--border); }
+      .native-wrap iframe { width:100%; height:100%; border:0; border-radius:10px; background:#121212; }
+      .table-meta { display:flex; gap:8px; align-items:center; margin:6px 0 8px 0; }
+      .table-actions { text-align:right; display:flex; gap:6px; justify-content:flex-end; }
       .scaler { transform: scale(var(--zoom)); transform-origin: top left; width: calc(100% / var(--zoom)); }
       .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#101010; border:1px solid var(--border); font-size:12px; color:var(--muted); }
       /* Loading overlay */
@@ -48,6 +58,9 @@
       .spinner { width:36px; height:36px; border:3px solid #101010; border-top-color: var(--accent); border-radius:50%; animation: spin 1s linear infinite; }
       @keyframes spin { to { transform: rotate(360deg); } }
       .overlay .msg { margin-top:8px; color:var(--fg); }
+      .title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 6px; }
+      .title-row .left { display:flex; align-items:center; gap:8px; }
+      .title-row .right { display:flex; gap:6px; }
     </style>
   </head>
   <body>
@@ -55,44 +68,24 @@
       <h1>Motuwe Scraper</h1>
     </header>
     <main>
-      <div class="row">
+      <div class="toolbar">
         <button class="primary" id="scrape">Scrape</button>
-        <button id="copy">Copy</button>
+        <button id="selectTable" title="Visually select a table on the page">Select Table</button>
         <button id="download">Download</button>
+        <select id="csvDelimiter" title="CSV delimiter" style="grid-column: span 2;">
+          <option value="auto">CSV: auto</option>
+          <option value=",">CSV: comma (,)</option>
+          <option value=";">CSV: semicolon (;)</option>
+        </select>
       </div>
       <div class="row" style="margin-top:8px;">
         <button id="send" style="display:none;">Send</button>
         <button id="openOptions">Options</button>
       </div>
 
-      <div class="row" style="margin-top:8px;">
-        <label style="flex:1"><input type="checkbox" id="deepScan"> Deep scan</label>
-        <label style="flex:1"><input type="checkbox" id="collectLinks"> Collect links</label>
-      </div>
-
       
 
-      <details id="advBox">
-        <summary>Advanced settings</summary>
-        <label>Selectors JSON (array of { name, selector, attr?, all? })</label>
-        <textarea id="selectors"></textarea>
-        <div class="muted">Example: [{"name":"title","selector":"h1"},{"name":"price","selector":".price"}]</div>
-
-        <div class="row">
-          <label><input type="checkbox" id="includeOpenGraph"> Include OpenGraph</label>
-          <label><input type="checkbox" id="includeJsonLd"> Include JSON-LD</label>
-        </div>
-
-        <label>Link Selector</label>
-        <input id="linkSelector" placeholder="a.product" />
-        <label>Link Patterns (regex, comma-separated)</label>
-        <input id="linkPatterns" placeholder="/product/,^https://example.com/" />
-
-        <div class="row">
-          <button id="save">Save</button>
-          <button id="preview">Preview (advanced)</button>
-        </div>
-      </details>
+      <!-- Advanced settings removed for simpler UX -->
 
       <section id="results" style="display:none;">
         <div class="row">
@@ -101,13 +94,13 @@
           <span class="pill" id="pillImages">0 images</span>
         </div>
         <div class="card" style="margin-top:10px;">
-          <h3 style="margin:4px 0 8px 0; font-size:14px;">Detected Tables</h3>
+          <div class="title-row">
+            <div class="left"><h3 style="margin:0; font-size:14px;">Detected Tables</h3></div>
+            <div class="right"><button id="downloadBestCsv">Download Best CSV</button></div>
+          </div>
           <div id="tablesList"></div>
         </div>
-        <div style="margin-top:10px;">
-          <h3 style="margin:4px 0 8px 0; font-size:14px;">Raw JSON</h3>
-          <pre id="output"></pre>
-        </div>
+        <!-- Raw JSON output hidden for simplified UX -->
       </section>
 
       <div class="overlay" id="loading">
